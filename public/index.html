@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16232b">
+<title>Thread Radio</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <button id="backBtn" class="icon-btn" aria-label="Back to posts" hidden>
+    <svg viewBox="0 0 24 24" width="22" height="22"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <h1 id="heading">Thread Radio</h1>
+  <button id="settingsBtn" class="icon-btn" aria-label="Settings">
+    <svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="10" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+  </button>
+</header>
+
+<main>
+  <section id="feedView">
+    <form id="subForm" class="sub-form" autocomplete="off">
+      <label for="subInput" class="sr">Subreddit</label>
+      <span class="prefix">r/</span>
+      <input id="subInput" name="sub" inputmode="text" autocapitalize="off" spellcheck="false" placeholder="singularity">
+      <button type="submit" class="load-btn">Load</button>
+    </form>
+    <div class="chips" id="quickSubs"></div>
+    <div class="sorts" role="tablist" id="sorts">
+      <button data-sort="hot" role="tab">Hot</button>
+      <button data-sort="new" role="tab">New</button>
+      <button data-sort="top" role="tab">Top today</button>
+    </div>
+    <button id="playTitlesBtn" class="big-play" disabled>Play all titles</button>
+    <p id="feedMsg" class="msg" role="status"></p>
+    <ol id="postList" class="post-list"></ol>
+  </section>
+
+  <section id="postView" hidden>
+    <article id="postArticle"></article>
+    <h2 class="comments-h" id="commentsHeading">Comments</h2>
+    <ol id="commentList" class="comment-list"></ol>
+    <p id="postMsg" class="msg" role="status"></p>
+  </section>
+</main>
+
+<div id="shareStart" class="share-start" hidden>
+  <button id="shareStartBtn" class="big-play">Tap to listen</button>
+</div>
+
+<footer class="player" id="player">
+  <div class="now">
+    <span id="voiceTag" class="voice-tag">AI voice</span>
+    <p id="nowText">Pick a subreddit, then press play.</p>
+  </div>
+  <div class="controls">
+    <button id="prevBtn" class="ctl" aria-label="Previous">
+      <svg viewBox="0 0 24 24" width="26" height="26"><path d="M6 5v14M19 5L9 12l10 7z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+    </button>
+    <button id="playBtn" class="ctl main" aria-label="Play">
+      <svg id="icPlay" viewBox="0 0 24 24" width="30" height="30"><path d="M7 4.5v15l13-7.5z" fill="currentColor"/></svg>
+      <svg id="icPause" viewBox="0 0 24 24" width="30" height="30" hidden><path d="M7 4h3.5v16H7zM13.5 4H17v16h-3.5z" fill="currentColor"/></svg>
+    </button>
+    <button id="nextBtn" class="ctl" aria-label="Next">
+      <svg viewBox="0 0 24 24" width="26" height="26"><path d="M18 5v14M5 5l10 7-10 7z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+    </button>
+    <button id="nextPostBtn" class="ctl small" aria-label="Skip to next post" hidden>Next post</button>
+  </div>
+</footer>
+
+<dialog id="settings">
+  <form method="dialog" class="settings-body">
+    <h2>Settings</h2>
+    <label>Voice
+      <select id="voiceSel">
+        <option value="en-US-AndrewMultilingualNeural">Andrew (US, warm)</option>
+        <option value="en-US-BrianMultilingualNeural">Brian (US, casual)</option>
+        <option value="en-US-AvaMultilingualNeural">Ava (US, bright)</option>
+        <option value="en-US-EmmaMultilingualNeural">Emma (US, calm)</option>
+        <option value="en-US-GuyNeural">Guy (US, newsreader)</option>
+        <option value="en-GB-RyanNeural">Ryan (UK)</option>
+        <option value="en-GB-SoniaNeural">Sonia (UK)</option>
+        <option value="en-AU-WilliamNeural">William (Australia)</option>
+      </select>
+    </label>
+    <label>Speed <output id="rateOut">1.0×</output>
+      <input id="rateRange" type="range" min="0.8" max="1.8" step="0.1" value="1">
+    </label>
+    <label class="check"><input type="checkbox" id="autoNext"> After a post's comments, go on to the next post</label>
+    <label class="check"><input type="checkbox" id="readReplies"> Read replies to top comments</label>
+    <label>Comments per post
+      <select id="maxComments">
+        <option value="10">10</option>
+        <option value="20">20</option>
+        <option value="40">40</option>
+      </select>
+    </label>
+    <button type="button" id="retryVoice" class="link-btn">Try the AI voice again</button>
+    <button value="close" class="load-btn">Done</button>
+  </form>
+</dialog>
+
+<script src="/app.js"></script>
+</body>
+</html>

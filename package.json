@@ -1,0 +1,9 @@
+{
+  "name": "thread-radio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Listen to Reddit posts and comments read aloud",
+  "dependencies": {
+    "msedge-tts": "^2.0.9"
+  }
+}

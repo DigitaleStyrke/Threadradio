@@ -1,0 +1,6 @@
+{
+  "functions": {
+    "api/tts.js": { "maxDuration": 30 },
+    "api/reddit.js": { "maxDuration": 20 }
+  }
+}
