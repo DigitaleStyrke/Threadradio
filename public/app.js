@@ -73,12 +73,146 @@ function shortNum(n) {
 }
 
 // ---------- API ----------
+// ---------- Reddit (fetched by the phone, not the server) ----------
+// Reddit blocks data-centre servers like Vercel, so the PHONE fetches the
+// public RSS feed itself through a free CORS relay, and we parse it here.
+// This makes the request look like it comes from a real device.
+
+const RELAYS = [
+  (u) => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
+  (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+  (u) => 'https://thingproxy.freeboard.io/fetch/' + u,
+];
+
+const REDDIT_MSG = {
+  blocked: 'Reddit is blocking the request right now. Wait a minute and try again.',
+  private: 'That subreddit is private, banned, or quarantined.',
+  not_found: 'Nothing found. Check the subreddit name or link.',
+  rate_limited: 'Reddit says slow down. Wait a minute and try again.',
+  reddit_down: 'Could not reach Reddit right now. Try again in a moment.',
+  bad_link: 'That does not look like a Reddit post link.',
+  bad_sub: 'Subreddit names use only letters, numbers and underscores.',
+};
+function rfail(code) { const e = new Error(REDDIT_MSG[code] || REDDIT_MSG.reddit_down); e.code = code; return e; }
+
+const _rssCache = new Map();
+async function fetchFeed(redditUrl) {
+  const cached = _rssCache.get(redditUrl);
+  if (cached && Date.now() - cached.t < 120000) return cached.v;
+
+  let lastErr = rfail('reddit_down');
+  for (const make of RELAYS) {
+    try {
+      const r = await fetch(make(redditUrl), { headers: { Accept: 'application/atom+xml, text/xml, */*' } });
+      if (r.status === 404) throw rfail('not_found');
+      if (r.status === 429) { lastErr = rfail('rate_limited'); continue; }
+      if (r.status === 403) { lastErr = rfail('blocked'); continue; }
+      if (!r.ok) { lastErr = rfail('reddit_down'); continue; }
+      const text = await r.text();
+      if (!/<(feed|rss)[\s>]/i.test(text)) {
+        if (/private|banned|quarantined/i.test(text)) throw rfail('private');
+        lastErr = rfail('reddit_down'); continue;
+      }
+      _rssCache.set(redditUrl, { t: Date.now(), v: text });
+      if (_rssCache.size > 40) _rssCache.delete(_rssCache.keys().next().value);
+      return text;
+    } catch (e) {
+      if (e.code === 'not_found' || e.code === 'private') throw e;
+      lastErr = e.code ? e : rfail('reddit_down');
+    }
+  }
+  throw lastErr;
+}
+
+function rDecode(s) {
+  if (!s) return '';
+  return s
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+function rStrip(html) {
+  return rDecode(html)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<li[^>]*>/gi, '\n\u2022 ')
+    .replace(/<a [^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, '$2')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+function rTag(block, name) {
+  const m = block.match(new RegExp('<' + name + '[^>]*>([\\s\\S]*?)<\\/' + name + '>', 'i'));
+  return m ? m[1] : '';
+}
+function rAttr(block, name, a) {
+  const m = block.match(new RegExp('<' + name + '\\b[^>]*\\b' + a + '="([^"]+)"', 'i'));
+  return m ? rDecode(m[1]) : '';
+}
+function rEntries(xml) { return xml.match(/<entry[\s>][\s\S]*?<\/entry>/gi) || []; }
+function rPostId(link) { const m = (link || '').match(/\/comments\/([a-z0-9]+)/i); return m ? m[1] : ''; }
+
+function rParse(xml) {
+  return rEntries(xml).map((e) => {
+    const link = rAttr(e, 'link', 'href') || rDecode(rTag(e, 'link'));
+    const author = rStrip(rTag(e, 'name')).replace(/^\/u\//, '');
+    return { id: rPostId(link), title: rDecode(rTag(e, 'title')).trim(), link, author, contentHtml: rTag(e, 'content') };
+  });
+}
+
+async function redditSub(sub, sort) {
+  const s = ['hot', 'new', 'top', 'rising'].includes(sort) ? sort : 'hot';
+  const t = s === 'top' ? '?t=day&limit=30' : '?limit=30';
+  const xml = await fetchFeed(`https://www.reddit.com/r/${sub}/${s}/.rss${t}`);
+  const posts = rParse(xml).filter((p) => p.id).map((p) => ({ id: p.id, sub, title: p.title, author: p.author, link: p.link }));
+  if (!posts.length) throw rfail('not_found');
+  return { sub, sort: s, posts };
+}
+
+async function redditPost(id, sub) {
+  const path = sub ? `/r/${sub}/comments/${id}/.rss` : `/comments/${id}/.rss`;
+  const xml = await fetchFeed('https://www.reddit.com' + path + '?limit=50&sort=top');
+  const es = rParse(xml);
+  if (!es.length) throw rfail('not_found');
+  const head = xml.split('<entry')[0];
+  const postTitle = rDecode(rTag(head, 'title')).trim();
+  const postEntry = es.find((e) => e.title && postTitle && e.title.trim() === postTitle.trim()) || es[0];
+  const post = { id, sub: sub || '', title: postTitle || postEntry.title, author: postEntry.author || '', body: rStrip(postEntry.contentHtml).slice(0, 6000) };
+  const comments = es.filter((e) => e !== postEntry)
+    .map((e) => ({ id: e.id || '', author: e.author || 'someone', body: rStrip(e.contentHtml).slice(0, 5000), depth: 0 }))
+    .filter((c) => c.body && c.body !== '[deleted]' && c.body !== '[removed]' && c.author !== 'AutoModerator')
+    .slice(0, 60);
+  return { post, comments };
+}
+
+async function redditResolveShare(link) {
+  let u;
+  try { u = new URL(link); } catch { throw rfail('bad_link'); }
+  const h = u.hostname;
+  if (!(h === 'redd.it' || h === 'reddit.com' || h.endsWith('.reddit.com'))) throw rfail('bad_link');
+  let id = rPostId(u.pathname);
+  if (id) return id;
+  if (h === 'redd.it') { const m = u.pathname.match(/^\/([a-z0-9]+)/i); if (m) return m[1]; }
+  throw rfail('bad_link');
+}
+
 async function api(params) {
-  const r = await fetch('/api/reddit?' + new URLSearchParams(params));
-  let j = {};
-  try { j = await r.json(); } catch {}
-  if (!r.ok) throw new Error(j.error || 'Something went wrong (' + r.status + ').');
-  return j;
+  if (params.sub && !params.post && !params.link) {
+    const sub = String(params.sub).replace(/^\/?r\//i, '').trim();
+    if (!/^[A-Za-z0-9_]{2,21}$/.test(sub)) throw rfail('bad_sub');
+    return redditSub(sub, params.sort);
+  }
+  if (params.post) {
+    const id = String(params.post);
+    if (!/^[a-z0-9]{2,12}$/i.test(id)) throw rfail('not_found');
+    const sub = /^[A-Za-z0-9_]{2,21}$/.test(params.sub || '') ? params.sub : '';
+    return redditPost(id, sub);
+  }
+  if (params.link) {
+    return redditPost(await redditResolveShare(String(params.link)), '');
+  }
+  throw rfail('reddit_down');
 }
 
 // ---------- audio engine ----------
